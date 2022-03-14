@@ -12,15 +12,12 @@ use solana_sdk::{
     system_instruction::create_account,
     transaction::{Transaction, TransactionError},
 };
-use spl_token::{
-    instruction::approve,
-    state::{Account as Token, AccountState, Mint},
-};
-use spl_token_lending::{
+use solend_program::{
     instruction::{
         borrow_obligation_liquidity, deposit_reserve_liquidity,
         deposit_reserve_liquidity_and_obligation_collateral, init_lending_market, init_obligation,
-        init_reserve, liquidate_obligation, refresh_reserve,
+        init_reserve, liquidate_obligation, refresh_obligation, refresh_reserve,
+        withdraw_obligation_collateral_and_redeem_reserve_collateral,
     },
     math::{Decimal, Rate, TryAdd, TryMul},
     pyth,
@@ -30,6 +27,10 @@ use spl_token_lending::{
         ObligationLiquidity, Reserve, ReserveCollateral, ReserveConfig, ReserveFees,
         ReserveLiquidity, INITIAL_COLLATERAL_RATIO, PROGRAM_VERSION,
     },
+};
+use spl_token::{
+    instruction::approve,
+    state::{Account as Token, AccountState, Mint},
 };
 use std::{convert::TryInto, str::FromStr};
 
@@ -96,7 +97,7 @@ impl AddPacked for ProgramTest {
 pub fn add_lending_market(test: &mut ProgramTest) -> TestLendingMarket {
     let lending_market_pubkey = Pubkey::new_unique();
     let (lending_market_authority, bump_seed) =
-        Pubkey::find_program_address(&[lending_market_pubkey.as_ref()], &spl_token_lending::id());
+        Pubkey::find_program_address(&[lending_market_pubkey.as_ref()], &solend_program::id());
 
     let lending_market_owner =
         read_keypair_file("tests/fixtures/lending_market_owner.json").unwrap();
@@ -115,7 +116,7 @@ pub fn add_lending_market(test: &mut ProgramTest) -> TestLendingMarket {
             oracle_program_id,
             switchboard_oracle_program_id: oracle_program_id,
         }),
-        &spl_token_lending::id(),
+        &solend_program::id(),
     );
 
     TestLendingMarket {
@@ -207,7 +208,7 @@ pub fn add_obligation(
         obligation_pubkey,
         u32::MAX as u64,
         &obligation,
-        &spl_token_lending::id(),
+        &solend_program::id(),
     );
 
     TestObligation {
@@ -375,7 +376,7 @@ pub fn add_reserve(
         reserve_pubkey,
         u32::MAX as u64,
         &reserve,
-        &spl_token_lending::id(),
+        &solend_program::id(),
     );
 
     let amount = if let COption::Some(rent_reserve) = is_native {
@@ -490,7 +491,7 @@ impl TestLendingMarket {
         let lending_market_pubkey = lending_market_keypair.pubkey();
         let (lending_market_authority, _bump_seed) = Pubkey::find_program_address(
             &[&lending_market_pubkey.to_bytes()[..32]],
-            &spl_token_lending::id(),
+            &solend_program::id(),
         );
 
         let rent = banks_client.get_rent().await.unwrap();
@@ -501,10 +502,10 @@ impl TestLendingMarket {
                     &lending_market_pubkey,
                     rent.minimum_balance(LendingMarket::LEN),
                     LendingMarket::LEN as u64,
-                    &spl_token_lending::id(),
+                    &solend_program::id(),
                 ),
                 init_lending_market(
-                    spl_token_lending::id(),
+                    solend_program::id(),
                     lending_market_owner.pubkey(),
                     QUOTE_CURRENCY,
                     lending_market_pubkey,
@@ -537,7 +538,7 @@ impl TestLendingMarket {
     ) {
         let mut transaction = Transaction::new_with_payer(
             &[refresh_reserve(
-                spl_token_lending::id(),
+                solend_program::id(),
                 reserve.pubkey,
                 reserve.liquidity_pyth_oracle_pubkey,
                 reserve.liquidity_switchboard_oracle_pubkey,
@@ -572,7 +573,7 @@ impl TestLendingMarket {
                 )
                 .unwrap(),
                 deposit_reserve_liquidity(
-                    spl_token_lending::id(),
+                    solend_program::id(),
                     liquidity_amount,
                     reserve.user_liquidity_pubkey,
                     reserve.user_collateral_pubkey,
@@ -626,7 +627,7 @@ impl TestLendingMarket {
                 )
                 .unwrap(),
                 deposit_reserve_liquidity_and_obligation_collateral(
-                    spl_token_lending::id(),
+                    solend_program::id(),
                     liquidity_amount,
                     reserve.user_liquidity_pubkey,
                     reserve.user_collateral_pubkey,
@@ -654,6 +655,57 @@ impl TestLendingMarket {
         assert_matches!(banks_client.process_transaction(transaction).await, Ok(()));
     }
 
+    pub async fn withdraw_and_redeem_collateral(
+        &self,
+        banks_client: &mut BanksClient,
+        user_accounts_owner: &Keypair,
+        payer: &Keypair,
+        reserve: &TestReserve,
+        obligation: &TestObligation,
+        collateral_amount: u64,
+    ) {
+        let user_transfer_authority = Keypair::new();
+        let mut transaction = Transaction::new_with_payer(
+            &[
+                approve(
+                    &spl_token::id(),
+                    &reserve.user_collateral_pubkey,
+                    &user_transfer_authority.pubkey(),
+                    &user_accounts_owner.pubkey(),
+                    &[],
+                    collateral_amount,
+                )
+                .unwrap(),
+                refresh_obligation(
+                    solend_program::id(),
+                    obligation.pubkey,
+                    vec![reserve.pubkey],
+                ),
+                withdraw_obligation_collateral_and_redeem_reserve_collateral(
+                    solend_program::id(),
+                    collateral_amount,
+                    reserve.collateral_supply_pubkey,
+                    reserve.user_collateral_pubkey,
+                    reserve.pubkey,
+                    obligation.pubkey,
+                    self.pubkey,
+                    reserve.user_liquidity_pubkey,
+                    reserve.collateral_mint_pubkey,
+                    reserve.liquidity_supply_pubkey,
+                    obligation.owner,
+                    user_transfer_authority.pubkey(),
+                ),
+            ],
+            Some(&payer.pubkey()),
+        );
+        let recent_blockhash = banks_client.get_recent_blockhash().await.unwrap();
+        transaction.sign(
+            &[payer, user_accounts_owner, &user_transfer_authority],
+            recent_blockhash,
+        );
+
+        assert_matches!(banks_client.process_transaction(transaction).await, Ok(()));
+    }
     pub async fn liquidate(
         &self,
         banks_client: &mut BanksClient,
@@ -681,7 +733,7 @@ impl TestLendingMarket {
                 )
                 .unwrap(),
                 liquidate_obligation(
-                    spl_token_lending::id(),
+                    solend_program::id(),
                     liquidity_amount,
                     repay_reserve.user_liquidity_pubkey,
                     withdraw_reserve.user_collateral_pubkey,
@@ -720,7 +772,7 @@ impl TestLendingMarket {
 
         let mut transaction = Transaction::new_with_payer(
             &[borrow_obligation_liquidity(
-                spl_token_lending::id(),
+                solend_program::id(),
                 liquidity_amount,
                 borrow_reserve.liquidity_supply_pubkey,
                 borrow_reserve.user_liquidity_pubkey,
@@ -866,10 +918,10 @@ impl TestReserve {
                     &reserve_pubkey,
                     rent.minimum_balance(Reserve::LEN),
                     Reserve::LEN as u64,
-                    &spl_token_lending::id(),
+                    &solend_program::id(),
                 ),
                 init_reserve(
-                    spl_token_lending::id(),
+                    solend_program::id(),
                     liquidity_amount,
                     config,
                     user_liquidity_pubkey,
@@ -1009,10 +1061,10 @@ impl TestObligation {
                     &obligation.keypair.pubkey(),
                     rent.minimum_balance(Obligation::LEN),
                     Obligation::LEN as u64,
-                    &spl_token_lending::id(),
+                    &solend_program::id(),
                 ),
                 init_obligation(
-                    spl_token_lending::id(),
+                    solend_program::id(),
                     obligation.pubkey,
                     lending_market.pubkey,
                     user_accounts_owner.pubkey(),
