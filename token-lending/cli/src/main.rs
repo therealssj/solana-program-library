@@ -369,6 +369,16 @@ fn main() {
                         .help("Amount of fee going to host account: [0, 100]"),
                 )
                 .arg(
+                    Arg::with_name("protocol_liquidation_fee")
+                        .long("protocol-liquidation-fee")
+                        .validator(is_parsable::<u8>)
+                        .value_name("INTEGER_PERCENT")
+                        .takes_value(true)
+                        .required(false)
+                        .default_value("30")
+                        .help("Amount of liquidation bonus going to fee reciever: [0, 100]"),
+                )
+                .arg(
                     Arg::with_name("deposit_limit")
                         .long("deposit-limit")
                         .validator(is_parsable::<u64>)
@@ -509,6 +519,15 @@ fn main() {
                         .takes_value(true)
                         .required(false)
                         .help("Amount of fee going to host account: [0, 100]"),
+                )
+                .arg(
+                    Arg::with_name("protocol_liquidation_fee")
+                        .long("protocol-liquidation-fee")
+                        .validator(is_parsable::<u8>)
+                        .value_name("INTEGER_PERCENT")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Amount of liquidation bonus going to fee reciever: [0, 100]"),
                 )
                 .arg(
                     Arg::with_name("deposit_limit")
