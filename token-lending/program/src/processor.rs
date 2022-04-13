@@ -144,6 +144,10 @@ pub fn process_instruction(
                 accounts,
             )
         }
+        LendingInstruction::SyncCollateral => {
+            msg!("Instruction: SyncCollateral");
+            process_sync_collateral(program_id, accounts)
+        }
     }
 }
 
@@ -2196,6 +2200,73 @@ fn process_update_reserve_config(
     Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
     Ok(())
 }
+
+
+#[inline(never)] // avoid stack frame limit
+fn process_sync_collateral(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+) -> ProgramResult {
+    let account_info_iter = &mut accounts.iter().peekable();
+    let reserve_info = next_account_info(account_info_iter)?;
+    let reserve_liquidity_fee_receiver_info = next_account_info(account_info_iter)?;
+    let reserve_supply_liquidity_info = next_account_info(account_info_iter)?;
+    let lending_market_info = next_account_info(account_info_iter)?;
+    let lending_market_authority_info = next_account_info(account_info_iter)?;
+    let token_program_id = next_account_info(account_info_iter)?;
+
+
+    let reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    if reserve_info.owner != program_id {
+        msg!(
+            "Reserve provided is not owned by the lending program {} != {}",
+            &reserve_info.owner.to_string(),
+            &program_id.to_string(),
+        );
+        return Err(LendingError::InvalidAccountOwner.into());
+    }
+
+    if &reserve.config.fee_receiver != reserve_liquidity_fee_receiver_info.key {
+        msg!("Reserve liquidity fee receiver does not match the reserve liquidity fee receiver provided");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+    if &reserve.liquidity.supply_pubkey != reserve_supply_liquidity_info.key {
+        msg!("Reserve liquidity supply must be used as the reserve supply liquidity provided");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
+
+    let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
+    let authority_signer_seeds = &[
+        lending_market_info.key.as_ref(),
+        &[lending_market.bump_seed],
+    ];
+    let lending_market_authority_pubkey =
+        Pubkey::create_program_address(authority_signer_seeds, program_id)?;
+    if &lending_market_authority_pubkey != lending_market_authority_info.key {
+        msg!(
+            "Derived lending market authority does not match the lending market authority provided"
+        );
+        return Err(LendingError::InvalidMarketAuthority.into());
+    }
+
+    let reserve_supply_liquidity = Account::unpack(&reserve_supply_liquidity_info.data.borrow())?;
+    let fee_reciever_claimable_amount = reserve_supply_liquidity.amount.checked_sub(reserve.liquidity.available_amount).unwrap();
+    
+    msg!("{}", fee_reciever_claimable_amount);
+    msg!("{}", fee_reciever_claimable_amount);
+    msg!("{}", fee_reciever_claimable_amount);
+    spl_token_transfer( TokenTransferParams {
+        source: reserve_supply_liquidity_info.clone(),
+        destination: reserve_liquidity_fee_receiver_info.clone(),
+        amount: fee_reciever_claimable_amount,
+        authority: lending_market_authority_info.clone(),
+        authority_signer_seeds,
+        token_program: token_program_id.clone(),
+    })?;
+
+    Ok(())
+}
+
 
 fn assert_rent_exempt(rent: &Rent, account_info: &AccountInfo) -> ProgramResult {
     if !rent.is_exempt(account_info.lamports(), account_info.data_len()) {

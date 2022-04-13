@@ -408,6 +408,10 @@ pub enum LendingInstruction {
         /// Amount of liquidity to repay - u64::MAX for up to 100% of borrowed amount
         liquidity_amount: u64,
     },
+
+    // 18
+    /// do thingy
+    SyncCollateral,
 }
 
 impl LendingInstruction {
@@ -550,6 +554,7 @@ impl LendingInstruction {
                 let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
                 Self::LiquidateObligationAndRedeemReserveCollateral { liquidity_amount }
             }
+            18 => Self::SyncCollateral,
             _ => {
                 msg!("Instruction cannot be unpacked");
                 return Err(LendingError::InstructionUnpackError.into());
@@ -734,6 +739,9 @@ impl LendingInstruction {
             Self::LiquidateObligationAndRedeemReserveCollateral { liquidity_amount } => {
                 buf.push(17);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
+            }
+            Self::SyncCollateral {} => {
+                 buf.push(18);
             }
         }
         buf
@@ -1350,5 +1358,32 @@ pub fn liquidate_obligation_and_redeem_reserve_collateral(
             liquidity_amount,
         }
         .pack(),
+    }
+}
+
+/// Creates a `SyncCollateral` instruction
+pub fn sync_collateral(
+    program_id: Pubkey,
+    reserve_pubkey: Pubkey,
+    reserve_liquidity_fee_receiver_pubkey: Pubkey,
+    reserve_supply_liquidity_pubkey: Pubkey,
+    lending_market_pubkey: Pubkey,
+) -> Instruction {
+    let (lending_market_authority_pubkey, _bump_seed) = Pubkey::find_program_address(
+        &[&lending_market_pubkey.to_bytes()[..PUBKEY_BYTES]],
+        &program_id,
+    );
+    let accounts = vec![
+        AccountMeta::new(reserve_pubkey, false),
+        AccountMeta::new(reserve_liquidity_fee_receiver_pubkey, false),
+        AccountMeta::new(reserve_supply_liquidity_pubkey, false),
+        AccountMeta::new_readonly(lending_market_pubkey, false),
+        AccountMeta::new_readonly(lending_market_authority_pubkey, false),
+        AccountMeta::new_readonly(spl_token::id(), false),
+    ];
+    Instruction {
+        program_id,
+        accounts,
+        data: LendingInstruction::SyncCollateral.pack(),
     }
 }

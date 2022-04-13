@@ -381,6 +381,8 @@ pub struct ReserveLiquidity {
     pub borrowed_amount_wads: Decimal,
     /// Reserve liquidity cumulative borrow rate
     pub cumulative_borrow_rate_wads: Decimal,
+    /// Reserve accumulated protocol fees
+    pub accumulated_protocol_fees_wads: Decimal,
     /// Reserve liquidity market price in quote currency
     pub market_price: Decimal,
 }
@@ -397,6 +399,7 @@ impl ReserveLiquidity {
             available_amount: 0,
             borrowed_amount_wads: Decimal::zero(),
             cumulative_borrow_rate_wads: Decimal::one(),
+            accumulated_protocol_fees_wads: Decimal::zero(),
             market_price: params.market_price,
         }
     }
@@ -743,7 +746,7 @@ impl IsInitialized for Reserve {
     }
 }
 
-const RESERVE_LEN: usize = 619; // 1 + 8 + 1 + 32 + 32 + 1 + 32 + 32 + 32 + 8 + 16 + 16 + 16 + 32 + 8 + 32 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 8 + 8 + 1 + 8 + 8 + 32 + 1 + 247
+const RESERVE_LEN: usize = 619; // 1 + 8 + 1 + 32 + 32 + 1 + 32 + 32 + 32 + 8 + 16 + 16 + 16 + 32 + 8 + 32 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 8 + 8 + 1 + 8 + 8 + 32 + 1 + 16 + 231
 impl Pack for Reserve {
     const LEN: usize = RESERVE_LEN;
 
@@ -782,6 +785,7 @@ impl Pack for Reserve {
             config_borrow_limit,
             config_fee_receiver,
             config_protocol_liquidation_fee,
+            liquidity_accumulated_protocol_fees_wads,
             _padding,
         ) = mut_array_refs![
             output,
@@ -815,7 +819,8 @@ impl Pack for Reserve {
             8,
             PUBKEY_BYTES,
             1,
-            247
+            16,
+            231
         ];
 
         // reserve
@@ -839,6 +844,10 @@ impl Pack for Reserve {
         pack_decimal(
             self.liquidity.cumulative_borrow_rate_wads,
             liquidity_cumulative_borrow_rate_wads,
+        );
+        pack_decimal(
+            self.liquidity.accumulated_protocol_fees_wads,
+            liquidity_accumulated_protocol_fees_wads,
         );
         pack_decimal(self.liquidity.market_price, liquidity_market_price);
 
@@ -899,6 +908,7 @@ impl Pack for Reserve {
             config_borrow_limit,
             config_fee_receiver,
             config_protocol_liquidation_fee,
+            liquidity_accumulated_protocol_fees_wads,
             _padding,
         ) = array_refs![
             input,
@@ -932,7 +942,8 @@ impl Pack for Reserve {
             8,
             PUBKEY_BYTES,
             1,
-            247
+            16,
+            231
         ];
 
         let version = u8::from_le_bytes(*version);
@@ -959,6 +970,7 @@ impl Pack for Reserve {
                 available_amount: u64::from_le_bytes(*liquidity_available_amount),
                 borrowed_amount_wads: unpack_decimal(liquidity_borrowed_amount_wads),
                 cumulative_borrow_rate_wads: unpack_decimal(liquidity_cumulative_borrow_rate_wads),
+                accumulated_protocol_fees_wads: unpack_decimal(liquidity_accumulated_protocol_fees_wads),
                 market_price: unpack_decimal(liquidity_market_price),
             },
             collateral: ReserveCollateral {
