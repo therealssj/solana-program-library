@@ -60,6 +60,7 @@ pub fn test_reserve_config() -> ReserveConfig {
         borrow_limit: u64::MAX,
         fee_receiver: Keypair::new().pubkey(),
         protocol_liquidation_fee: 30,
+        protocol_take_rate: 10,
     }
 }
 

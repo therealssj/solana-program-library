@@ -129,8 +129,9 @@ impl Reserve {
         let slots_elapsed = self.last_update.slots_elapsed(current_slot)?;
         if slots_elapsed > 0 {
             let current_borrow_rate = self.current_borrow_rate()?;
+            let take_rate = Rate::from_percent(self.config.protocol_take_rate);
             self.liquidity
-                .compound_interest(current_borrow_rate, slots_elapsed)?;
+                .compound_interest(current_borrow_rate, slots_elapsed, take_rate)?;
         }
         Ok(())
     }
@@ -474,6 +475,7 @@ impl ReserveLiquidity {
         &mut self,
         current_borrow_rate: Rate,
         slots_elapsed: u64,
+        take_rate: Rate,
     ) -> ProgramResult {
         let slot_interest_rate = current_borrow_rate.try_div(SLOTS_PER_YEAR)?;
         let compounded_interest_rate = Rate::one()
@@ -482,9 +484,22 @@ impl ReserveLiquidity {
         self.cumulative_borrow_rate_wads = self
             .cumulative_borrow_rate_wads
             .try_mul(compounded_interest_rate)?;
+
+        let net_new_debt = self
+            .borrowed_amount_wads
+            .try_mul(compounded_interest_rate)?
+            .try_sub(self.borrowed_amount_wads)?;
+
+        let delta_accumulated_protocol_fees = net_new_debt.try_mul(take_rate)?;
+        let delta_borrowed_amount_wads = net_new_debt.try_sub(delta_accumulated_protocol_fees)?;
+
+        self.accumulated_protocol_fees_wads = self
+            .accumulated_protocol_fees_wads
+            .try_add(delta_accumulated_protocol_fees)?;
+
         self.borrowed_amount_wads = self
             .borrowed_amount_wads
-            .try_mul(compounded_interest_rate)?;
+            .try_add(delta_borrowed_amount_wads)?;
         Ok(())
     }
 }
@@ -636,6 +651,8 @@ pub struct ReserveConfig {
     pub fee_receiver: Pubkey,
     /// Cut of the liquidation bonus that the protocol receives, as a percentage
     pub protocol_liquidation_fee: u8,
+    /// Protocol take rate is the amount borrowed interest protocol recieves, as a percentage  
+    pub protocol_take_rate: u8,
 }
 
 /// Additional fee information on a reserve
@@ -785,6 +802,7 @@ impl Pack for Reserve {
             config_borrow_limit,
             config_fee_receiver,
             config_protocol_liquidation_fee,
+            config_protocol_take_rate,
             liquidity_accumulated_protocol_fees_wads,
             _padding,
         ) = mut_array_refs![
@@ -819,8 +837,9 @@ impl Pack for Reserve {
             8,
             PUBKEY_BYTES,
             1,
+            1,
             16,
-            231
+            230
         ];
 
         // reserve
@@ -871,6 +890,7 @@ impl Pack for Reserve {
         *config_borrow_limit = self.config.borrow_limit.to_le_bytes();
         config_fee_receiver.copy_from_slice(self.config.fee_receiver.as_ref());
         *config_protocol_liquidation_fee = self.config.protocol_liquidation_fee.to_le_bytes();
+        *config_protocol_take_rate = self.config.protocol_take_rate.to_le_bytes();
     }
 
     /// Unpacks a byte buffer into a [ReserveInfo](struct.ReserveInfo.html).
@@ -908,6 +928,7 @@ impl Pack for Reserve {
             config_borrow_limit,
             config_fee_receiver,
             config_protocol_liquidation_fee,
+            config_protocol_take_rate,
             liquidity_accumulated_protocol_fees_wads,
             _padding,
         ) = array_refs![
@@ -942,8 +963,9 @@ impl Pack for Reserve {
             8,
             PUBKEY_BYTES,
             1,
+            1,
             16,
-            231
+            230
         ];
 
         let version = u8::from_le_bytes(*version);
@@ -970,7 +992,9 @@ impl Pack for Reserve {
                 available_amount: u64::from_le_bytes(*liquidity_available_amount),
                 borrowed_amount_wads: unpack_decimal(liquidity_borrowed_amount_wads),
                 cumulative_borrow_rate_wads: unpack_decimal(liquidity_cumulative_borrow_rate_wads),
-                accumulated_protocol_fees_wads: unpack_decimal(liquidity_accumulated_protocol_fees_wads),
+                accumulated_protocol_fees_wads: unpack_decimal(
+                    liquidity_accumulated_protocol_fees_wads,
+                ),
                 market_price: unpack_decimal(liquidity_market_price),
             },
             collateral: ReserveCollateral {
@@ -995,6 +1019,7 @@ impl Pack for Reserve {
                 borrow_limit: u64::from_le_bytes(*config_borrow_limit),
                 fee_receiver: Pubkey::new_from_array(*config_fee_receiver),
                 protocol_liquidation_fee: u8::from_le_bytes(*config_protocol_liquidation_fee),
+                protocol_take_rate: u8::from_le_bytes(*config_protocol_take_rate),
             },
         })
     }
@@ -1160,15 +1185,18 @@ mod test {
         fn compound_interest(
             slots_elapsed in 0..=SLOTS_PER_YEAR,
             borrow_rate in 0..=u8::MAX,
+            take_rate in 0..=100u8,
         ) {
             let mut reserve = Reserve::default();
             let borrow_rate = Rate::from_percent(borrow_rate);
+            let take_rate = Rate::from_percent(take_rate);
 
             // Simulate running for max 1000 years, assuming that interest is
             // compounded at least once a year
             for _ in 0..1000 {
-                reserve.liquidity.compound_interest(borrow_rate, slots_elapsed)?;
+                reserve.liquidity.compound_interest(borrow_rate, slots_elapsed, take_rate)?;
                 reserve.liquidity.cumulative_borrow_rate_wads.to_scaled_val()?;
+                reserve.liquidity.accumulated_protocol_fees_wads.to_scaled_val()?;
             }
         }
 

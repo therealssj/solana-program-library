@@ -2201,12 +2201,8 @@ fn process_update_reserve_config(
     Ok(())
 }
 
-
 #[inline(never)] // avoid stack frame limit
-fn process_sync_collateral(
-    program_id: &Pubkey,
-    accounts: &[AccountInfo],
-) -> ProgramResult {
+fn process_sync_collateral(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let account_info_iter = &mut accounts.iter().peekable();
     let reserve_info = next_account_info(account_info_iter)?;
     let reserve_liquidity_fee_receiver_info = next_account_info(account_info_iter)?;
@@ -2214,7 +2210,6 @@ fn process_sync_collateral(
     let lending_market_info = next_account_info(account_info_iter)?;
     let lending_market_authority_info = next_account_info(account_info_iter)?;
     let token_program_id = next_account_info(account_info_iter)?;
-
 
     let reserve = Reserve::unpack(&reserve_info.data.borrow())?;
     if reserve_info.owner != program_id {
@@ -2250,12 +2245,15 @@ fn process_sync_collateral(
     }
 
     let reserve_supply_liquidity = Account::unpack(&reserve_supply_liquidity_info.data.borrow())?;
-    let fee_reciever_claimable_amount = reserve_supply_liquidity.amount.checked_sub(reserve.liquidity.available_amount).unwrap();
-    
+    let fee_reciever_claimable_amount = reserve_supply_liquidity
+        .amount
+        .checked_sub(reserve.liquidity.available_amount)
+        .unwrap();
+
     msg!("{}", fee_reciever_claimable_amount);
     msg!("{}", fee_reciever_claimable_amount);
     msg!("{}", fee_reciever_claimable_amount);
-    spl_token_transfer( TokenTransferParams {
+    spl_token_transfer(TokenTransferParams {
         source: reserve_supply_liquidity_info.clone(),
         destination: reserve_liquidity_fee_receiver_info.clone(),
         amount: fee_reciever_claimable_amount,
@@ -2266,7 +2264,6 @@ fn process_sync_collateral(
 
     Ok(())
 }
-
 
 fn assert_rent_exempt(rent: &Rent, account_info: &AccountInfo) -> ProgramResult {
     if !rent.is_exempt(account_info.lamports(), account_info.data_len()) {

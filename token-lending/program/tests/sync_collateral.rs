@@ -10,7 +10,7 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use solend_program::{
-    instruction::{refresh_reserve,sync_collateral},
+    instruction::{refresh_reserve, sync_collateral},
     math::{Decimal, Rate, TryAdd, TryDiv, TryMul},
     processor::process_instruction,
     state::SLOTS_PER_YEAR,

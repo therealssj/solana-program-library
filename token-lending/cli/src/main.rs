@@ -379,6 +379,15 @@ fn main() {
                         .help("Amount of liquidation bonus going to fee reciever: [0, 100]"),
                 )
                 .arg(
+                    Arg::with_name("protocol_take_rate")
+                        .long("protocol-take-rate")
+                        .validator(is_parsable::<u8>)
+                        .value_name("INTEGER_PERCENT")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Amount of interest spread going to fee reciever: [0, 100]"),
+                )
+                .arg(
                     Arg::with_name("deposit_limit")
                         .long("deposit-limit")
                         .validator(is_parsable::<u64>)
@@ -530,6 +539,15 @@ fn main() {
                         .help("Amount of liquidation bonus going to fee reciever: [0, 100]"),
                 )
                 .arg(
+                    Arg::with_name("protocol_take_rate")
+                        .long("protocol-take-rate")
+                        .validator(is_parsable::<u8>)
+                        .value_name("INTEGER_PERCENT")
+                        .takes_value(true)
+                        .required(false)
+                        .help("Amount of interest spread going to fee reciever: [0, 100]"),
+                )
+                .arg(
                     Arg::with_name("deposit_limit")
                         .long("deposit-limit")
                         .validator(is_parsable::<u64>)
@@ -669,6 +687,7 @@ fn main() {
             let liquidity_fee_receiver_keypair = Keypair::new();
             let protocol_liquidation_fee =
                 value_of(arg_matches, "protocol_liquidation_fee").unwrap();
+            let protocol_take_rate = value_of(arg_matches, "protocol_take_rate").unwrap();
 
             let source_liquidity_account = config
                 .rpc_client
@@ -707,6 +726,7 @@ fn main() {
                     borrow_limit,
                     fee_receiver: liquidity_fee_receiver_keypair.pubkey(),
                     protocol_liquidation_fee,
+                    protocol_take_rate,
                 },
                 source_liquidity_pubkey,
                 source_liquidity_owner_keypair,
