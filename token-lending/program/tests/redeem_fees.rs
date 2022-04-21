@@ -10,7 +10,7 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use solend_program::{
-    instruction::{refresh_reserve, sync_collateral},
+    instruction::{redeem_fees, refresh_reserve},
     math::{Decimal, Rate, TryAdd, TryDiv, TryMul},
     processor::process_instruction,
     state::SLOTS_PER_YEAR,
@@ -109,14 +109,14 @@ async fn test_success() {
                 sol_oracle.pyth_price_pubkey,
                 sol_oracle.switchboard_feed_pubkey,
             ),
-            sync_collateral(
+            redeem_fees(
                 solend_program::id(),
                 usdc_test_reserve.pubkey,
                 usdc_test_reserve.config.fee_receiver,
                 usdc_test_reserve.liquidity_supply_pubkey,
                 lending_market.pubkey,
             ),
-            sync_collateral(
+            redeem_fees(
                 solend_program::id(),
                 sol_test_reserve.pubkey,
                 sol_test_reserve.config.fee_receiver,

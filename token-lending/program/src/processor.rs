@@ -144,9 +144,9 @@ pub fn process_instruction(
                 accounts,
             )
         }
-        LendingInstruction::SyncCollateral => {
-            msg!("Instruction: SyncCollateral");
-            process_sync_collateral(program_id, accounts)
+        LendingInstruction::RedeemFees => {
+            msg!("Instruction: RedeemFees");
+            process_redeem_fees(program_id, accounts)
         }
     }
 }
@@ -2202,7 +2202,7 @@ fn process_update_reserve_config(
 }
 
 #[inline(never)] // avoid stack frame limit
-fn process_sync_collateral(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+fn process_redeem_fees(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let account_info_iter = &mut accounts.iter().peekable();
     let reserve_info = next_account_info(account_info_iter)?;
     let reserve_liquidity_fee_receiver_info = next_account_info(account_info_iter)?;
@@ -2211,7 +2211,7 @@ fn process_sync_collateral(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pro
     let lending_market_authority_info = next_account_info(account_info_iter)?;
     let token_program_id = next_account_info(account_info_iter)?;
 
-    let reserve = Reserve::unpack(&reserve_info.data.borrow())?;
+    let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
     if reserve_info.owner != program_id {
         msg!(
             "Reserve provided is not owned by the lending program {} != {}",
@@ -2244,15 +2244,16 @@ fn process_sync_collateral(program_id: &Pubkey, accounts: &[AccountInfo]) -> Pro
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
-    let reserve_supply_liquidity = Account::unpack(&reserve_supply_liquidity_info.data.borrow())?;
-    let fee_reciever_claimable_amount = reserve_supply_liquidity
-        .amount
-        .checked_sub(reserve.liquidity.available_amount)
-        .unwrap();
+    let fee_reciever_claimable_amount = reserve
+        .liquidity
+        .accumulated_protocol_fees_wads
+        .try_floor_u64()?;
 
-    msg!("{}", fee_reciever_claimable_amount);
-    msg!("{}", fee_reciever_claimable_amount);
-    msg!("{}", fee_reciever_claimable_amount);
+    reserve.liquidity.accumulated_protocol_fees_wads = reserve
+        .liquidity
+        .accumulated_protocol_fees_wads
+        .try_sub(Decimal::from(fee_reciever_claimable_amount))?;
+
     spl_token_transfer(TokenTransferParams {
         source: reserve_supply_liquidity_info.clone(),
         destination: reserve_liquidity_fee_receiver_info.clone(),

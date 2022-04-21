@@ -411,7 +411,7 @@ pub enum LendingInstruction {
 
     // 18
     /// do thingy
-    SyncCollateral,
+    RedeemFees,
 }
 
 impl LendingInstruction {
@@ -558,7 +558,7 @@ impl LendingInstruction {
                 let (liquidity_amount, _rest) = Self::unpack_u64(rest)?;
                 Self::LiquidateObligationAndRedeemReserveCollateral { liquidity_amount }
             }
-            18 => Self::SyncCollateral,
+            18 => Self::RedeemFees,
             _ => {
                 msg!("Instruction cannot be unpacked");
                 return Err(LendingError::InstructionUnpackError.into());
@@ -746,7 +746,7 @@ impl LendingInstruction {
                 buf.push(17);
                 buf.extend_from_slice(&liquidity_amount.to_le_bytes());
             }
-            Self::SyncCollateral {} => {
+            Self::RedeemFees {} => {
                 buf.push(18);
             }
         }
@@ -1367,8 +1367,8 @@ pub fn liquidate_obligation_and_redeem_reserve_collateral(
     }
 }
 
-/// Creates a `SyncCollateral` instruction
-pub fn sync_collateral(
+/// Creates a `RedeemFees` instruction
+pub fn redeem_fees(
     program_id: Pubkey,
     reserve_pubkey: Pubkey,
     reserve_liquidity_fee_receiver_pubkey: Pubkey,
@@ -1390,6 +1390,6 @@ pub fn sync_collateral(
     Instruction {
         program_id,
         accounts,
-        data: LendingInstruction::SyncCollateral.pack(),
+        data: LendingInstruction::RedeemFees.pack(),
     }
 }
