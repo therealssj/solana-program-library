@@ -2674,6 +2674,10 @@ fn validate_reserve_config(config: ReserveConfig) -> ProgramResult {
         msg!("Protocol liquidation fee must be in range [0, 100]");
         return Err(LendingError::InvalidConfig.into());
     }
+    if config.protocol_take_rate > 100 {
+        msg!("Protocol take rate must be in range [0, 100]");
+        return Err(LendingError::InvalidConfig.into());
+    }
     Ok(())
 }
 

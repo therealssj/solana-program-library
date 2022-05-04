@@ -11,7 +11,7 @@ use solana_sdk::{
 };
 use solend_program::{
     instruction::refresh_reserve,
-    math::{Decimal, Rate, TryAdd, TryDiv, TryMul},
+    math::{Decimal, Rate, TryAdd, TryDiv, TryMul, TrySub},
     processor::process_instruction,
     state::SLOTS_PER_YEAR,
 };
@@ -25,7 +25,7 @@ async fn test_success() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(28_000);
+    test.set_bpf_compute_max_units(31_000);
 
     const SOL_RESERVE_LIQUIDITY_LAMPORTS: u64 = 100 * LAMPORTS_TO_SOL;
     const USDC_RESERVE_LIQUIDITY_FRACTIONAL: u64 = 100 * FRACTIONAL_TO_USDC;
@@ -117,6 +117,17 @@ async fn test_success() {
         .unwrap();
     let compound_rate = Rate::one().try_add(slot_rate).unwrap();
     let compound_borrow = Decimal::from(BORROW_AMOUNT).try_mul(compound_rate).unwrap();
+    let net_new_debt = compound_borrow
+        .try_sub(Decimal::from(BORROW_AMOUNT))
+        .unwrap();
+    let protocol_take_rate = Rate::from_percent(usdc_reserve.config.protocol_take_rate);
+    let delta_accumulated_protocol_fees = net_new_debt.try_mul(protocol_take_rate).unwrap();
+    let delta_borrowed_amount_wads = net_new_debt
+        .try_sub(delta_accumulated_protocol_fees)
+        .unwrap();
+    let new_borrow_amount_wads = Decimal::from(BORROW_AMOUNT)
+        .try_add(delta_borrowed_amount_wads)
+        .unwrap();
 
     assert_eq!(
         sol_reserve.liquidity.cumulative_borrow_rate_wads,
@@ -126,7 +137,10 @@ async fn test_success() {
         sol_reserve.liquidity.cumulative_borrow_rate_wads,
         usdc_reserve.liquidity.cumulative_borrow_rate_wads
     );
-    assert_eq!(sol_reserve.liquidity.borrowed_amount_wads, compound_borrow);
+    assert_eq!(
+        sol_reserve.liquidity.borrowed_amount_wads,
+        new_borrow_amount_wads
+    );
     assert_eq!(
         sol_reserve.liquidity.borrowed_amount_wads,
         usdc_reserve.liquidity.borrowed_amount_wads
