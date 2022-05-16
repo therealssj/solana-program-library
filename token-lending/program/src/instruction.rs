@@ -410,7 +410,13 @@ pub enum LendingInstruction {
     },
 
     // 18
-    /// do thingy
+    ///   0. `[writable]` Reserve account.
+    ///   1. `[writable]` Borrow reserve liquidity fee receiver account.
+    ///                     Must be the fee account specified at InitReserve.
+    ///   2. `[writable]` Reserve liquidity supply SPL Token account.
+    ///   3. `[]` Lending market account.
+    ///   4. `[]` Derived lending market authority.
+    ///   5. `[]` Token program id.
     RedeemFees,
 }
 
