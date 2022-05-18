@@ -2,6 +2,8 @@
 
 mod helpers;
 
+use std::str::FromStr;
+
 use helpers::*;
 use solana_program_test::*;
 use solana_sdk::{
@@ -27,9 +29,10 @@ async fn test_success() {
     // limit to track compute unit increase
     test.set_bpf_compute_max_units(228_000);
 
-    const SOL_RESERVE_LIQUIDITY_LAMPORTS: u64 = 100 * LAMPORTS_TO_SOL;
-    const USDC_RESERVE_LIQUIDITY_FRACTIONAL: u64 = 100 * FRACTIONAL_TO_USDC;
-    const BORROW_AMOUNT: u64 = 100;
+    const SOL_RESERVE_LIQUIDITY_LAMPORTS: u64 = 100000000 * LAMPORTS_TO_SOL;
+    const USDC_RESERVE_LIQUIDITY_FRACTIONAL: u64 = 100000 * FRACTIONAL_TO_USDC;
+    const BORROW_AMOUNT: u64 = 100000;
+    const SLOTS_ELAPSED: u64 = 69420;
 
     let user_accounts_owner = Keypair::new();
     let lending_market = add_lending_market(&mut test);
@@ -37,14 +40,22 @@ async fn test_success() {
     let mut usdc_reserve_config = test_reserve_config();
     usdc_reserve_config.loan_to_value_ratio = 80;
 
-    // Configure reserve to a fixed borrow rate of 1%
-    const BORROW_RATE: u8 = 1;
+    // Configure reserve to a fixed borrow rate of 200%
+    const BORROW_RATE: u8 = 250;
     usdc_reserve_config.min_borrow_rate = BORROW_RATE;
     usdc_reserve_config.optimal_borrow_rate = BORROW_RATE;
     usdc_reserve_config.optimal_utilization_rate = 100;
 
     let usdc_mint = add_usdc_mint(&mut test);
-    let usdc_oracle = add_usdc_oracle(&mut test);
+    let usdc_oracle = add_oracle(
+        &mut test,
+        Pubkey::from_str(SRM_PYTH_PRODUCT).unwrap(),
+        Pubkey::from_str(SRM_PYTH_PRICE).unwrap(),
+        Pubkey::from_str(SRM_SWITCHBOARD_FEED).unwrap(),
+        // Set USDC price to $1
+        Decimal::from(1u64),
+        SLOTS_ELAPSED,
+    );
     let usdc_test_reserve = add_reserve(
         &mut test,
         &lending_market,
@@ -68,7 +79,15 @@ async fn test_success() {
     sol_reserve_config.min_borrow_rate = BORROW_RATE;
     sol_reserve_config.optimal_borrow_rate = BORROW_RATE;
     sol_reserve_config.optimal_utilization_rate = 100;
-    let sol_oracle = add_sol_oracle(&mut test);
+    let sol_oracle = add_oracle(
+        &mut test,
+        Pubkey::from_str(SOL_PYTH_PRODUCT).unwrap(),
+        Pubkey::from_str(SOL_PYTH_PRICE).unwrap(),
+        Pubkey::from_str(SOL_SWITCHBOARD_FEED).unwrap(),
+        // Set SOL price to $20
+        Decimal::from(20u64),
+        SLOTS_ELAPSED,
+    );
     let sol_test_reserve = add_reserve(
         &mut test,
         &lending_market,
@@ -86,7 +105,7 @@ async fn test_success() {
     );
 
     let mut test_context = test.start_with_context().await;
-    test_context.warp_to_slot(3).unwrap(); // clock.slot = 3
+    test_context.warp_to_slot(2 + SLOTS_ELAPSED).unwrap(); // clock.slot = 100
 
     let ProgramTestContext {
         mut banks_client,
@@ -109,6 +128,22 @@ async fn test_success() {
                 sol_oracle.pyth_price_pubkey,
                 sol_oracle.switchboard_feed_pubkey,
             ),
+        ],
+        Some(&payer.pubkey()),
+    );
+
+    transaction.sign(&[&payer], recent_blockhash);
+    assert!(banks_client.process_transaction(transaction).await.is_ok());
+
+    let sol_reserve_before = sol_test_reserve.get_state(&mut banks_client).await;
+    let usdc_reserve_before = usdc_test_reserve.get_state(&mut banks_client).await;
+    let sol_balance_before =
+        get_token_balance(&mut banks_client, sol_reserve_before.config.fee_receiver).await;
+    let usdc_balance_before =
+        get_token_balance(&mut banks_client, usdc_reserve_before.config.fee_receiver).await;
+
+    let mut transaction2 = Transaction::new_with_payer(
+        &[
             redeem_fees(
                 solend_program::id(),
                 usdc_test_reserve.pubkey,
@@ -127,16 +162,24 @@ async fn test_success() {
         Some(&payer.pubkey()),
     );
 
-    transaction.sign(&[&payer], recent_blockhash);
-    assert!(banks_client.process_transaction(transaction).await.is_ok());
+    transaction2.sign(&[&payer], recent_blockhash);
+    assert!(banks_client.process_transaction(transaction2).await.is_ok());
 
     let sol_reserve = sol_test_reserve.get_state(&mut banks_client).await;
     let usdc_reserve = usdc_test_reserve.get_state(&mut banks_client).await;
+    let sol_balance_after =
+        get_token_balance(&mut banks_client, sol_reserve.config.fee_receiver).await;
+    let usdc_balance_after =
+        get_token_balance(&mut banks_client, usdc_reserve.config.fee_receiver).await;
 
     let slot_rate = Rate::from_percent(BORROW_RATE)
         .try_div(SLOTS_PER_YEAR)
         .unwrap();
-    let compound_rate = Rate::one().try_add(slot_rate).unwrap();
+    let compound_rate = Rate::one()
+        .try_add(slot_rate)
+        .unwrap()
+        .try_pow(SLOTS_ELAPSED)
+        .unwrap();
     let compound_borrow = Decimal::from(BORROW_AMOUNT).try_mul(compound_rate).unwrap();
 
     let net_new_debt = compound_borrow
@@ -164,8 +207,36 @@ async fn test_success() {
         new_borrow_amount_wads
     );
     assert_eq!(
+        usdc_reserve_before
+            .liquidity
+            .accumulated_protocol_fees_wads
+            .try_floor_u64()
+            .unwrap(),
+        usdc_balance_after - usdc_balance_before
+    );
+    assert_eq!(
+        usdc_reserve.liquidity.accumulated_protocol_fees_wads,
+        usdc_reserve_before
+            .liquidity
+            .accumulated_protocol_fees_wads
+            .try_sub(Decimal::from(usdc_balance_after - usdc_balance_before))
+            .unwrap()
+    );
+    assert_eq!(
+        sol_reserve_before
+            .liquidity
+            .accumulated_protocol_fees_wads
+            .try_floor_u64()
+            .unwrap(),
+        sol_balance_after - sol_balance_before
+    );
+    assert_eq!(
         sol_reserve.liquidity.accumulated_protocol_fees_wads,
-        delta_accumulated_protocol_fees
+        sol_reserve_before
+            .liquidity
+            .accumulated_protocol_fees_wads
+            .try_sub(Decimal::from(sol_balance_after - sol_balance_before))
+            .unwrap()
     );
     assert_eq!(
         sol_reserve.liquidity.borrowed_amount_wads,

@@ -68,6 +68,8 @@ struct PartialReserveConfig {
     pub fee_receiver: Option<Pubkey>,
     /// Cut of the liquidation bonus that the protocol receives, as a percentage
     pub protocol_liquidation_fee: Option<u8>,
+    /// Protocol take rate is the amount borrowed interest protocol recieves, as a percentage  
+    pub protocol_take_rate: Option<u8>,
 }
 
 /// Reserve Fees with optional fields
@@ -376,7 +378,7 @@ fn main() {
                         .takes_value(true)
                         .required(false)
                         .default_value("30")
-                        .help("Amount of liquidation bonus going to fee reciever: [0, 100]"),
+                        .help("Amount of liquidation bonus going to fee receiver: [0, 100]"),
                 )
                 .arg(
                     Arg::with_name("protocol_take_rate")
@@ -385,7 +387,7 @@ fn main() {
                         .value_name("INTEGER_PERCENT")
                         .takes_value(true)
                         .required(false)
-                        .help("Amount of interest spread going to fee reciever: [0, 100]"),
+                        .help("Amount of interest spread going to fee receiver: [0, 100]"),
                 )
                 .arg(
                     Arg::with_name("deposit_limit")
@@ -536,7 +538,7 @@ fn main() {
                         .value_name("INTEGER_PERCENT")
                         .takes_value(true)
                         .required(false)
-                        .help("Amount of liquidation bonus going to fee reciever: [0, 100]"),
+                        .help("Amount of liquidation bonus going to fee receiver: [0, 100]"),
                 )
                 .arg(
                     Arg::with_name("protocol_take_rate")
@@ -545,7 +547,7 @@ fn main() {
                         .value_name("INTEGER_PERCENT")
                         .takes_value(true)
                         .required(false)
-                        .help("Amount of interest spread going to fee reciever: [0, 100]"),
+                        .help("Amount of interest spread going to fee receiver: [0, 100]"),
                 )
                 .arg(
                     Arg::with_name("deposit_limit")
@@ -758,6 +760,7 @@ fn main() {
             let borrow_limit = value_of(arg_matches, "borrow_limit");
             let fee_receiver = pubkey_of(arg_matches, "fee_receiver");
             let protocol_liquidation_fee = value_of(arg_matches, "protocol_liquidation_fee");
+            let protocol_take_rate = value_of(arg_matches, "protocol_take_rate");
             let pyth_product_pubkey = pubkey_of(arg_matches, "pyth_product");
             let pyth_price_pubkey = pubkey_of(arg_matches, "pyth_price");
             let switchboard_feed_pubkey = pubkey_of(arg_matches, "switchboard_feed");
@@ -784,6 +787,7 @@ fn main() {
                     borrow_limit,
                     fee_receiver,
                     protocol_liquidation_fee,
+                    protocol_take_rate,
                 },
                 pyth_product_pubkey,
                 pyth_price_pubkey,
@@ -1217,6 +1221,15 @@ fn command_update_reserve(
             reserve_config.protocol_liquidation_fee.unwrap(),
         );
         reserve.config.protocol_liquidation_fee = reserve_config.protocol_liquidation_fee.unwrap();
+    }
+
+    if reserve_config.protocol_take_rate.is_some() {
+        println!(
+            "Updating protocol_take_rate from {} to {}",
+            reserve.config.protocol_take_rate,
+            reserve_config.protocol_take_rate.unwrap(),
+        );
+        reserve.config.protocol_take_rate = reserve_config.protocol_take_rate.unwrap();
     }
 
     let mut new_pyth_product_pubkey = solend_program::NULL_PUBKEY;

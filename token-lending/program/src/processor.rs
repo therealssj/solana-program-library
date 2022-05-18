@@ -2229,8 +2229,20 @@ fn process_redeem_fees(program_id: &Pubkey, accounts: &[AccountInfo]) -> Program
         msg!("Reserve liquidity supply must be used as the reserve supply liquidity provided");
         return Err(LendingError::InvalidAccountInput.into());
     }
+    if &reserve.lending_market != lending_market_info.key {
+        msg!("Reserve lending market does not match the lending market provided");
+        return Err(LendingError::InvalidAccountInput.into());
+    }
 
     let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
+    if lending_market_info.owner != program_id {
+        msg!("Lending market provided is not owned by the lending program");
+        return Err(LendingError::InvalidAccountOwner.into());
+    }
+    if &lending_market.token_program_id != token_program_id.key {
+        msg!("Lending market token program does not match the token program provided");
+        return Err(LendingError::InvalidTokenProgram.into());
+    }
     let authority_signer_seeds = &[
         lending_market_info.key.as_ref(),
         &[lending_market.bump_seed],
@@ -2244,7 +2256,7 @@ fn process_redeem_fees(program_id: &Pubkey, accounts: &[AccountInfo]) -> Program
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
-    let fee_reciever_claimable_amount = reserve
+    let fee_receiver_claimable_amount = reserve
         .liquidity
         .accumulated_protocol_fees_wads
         .try_floor_u64()?;
@@ -2252,12 +2264,14 @@ fn process_redeem_fees(program_id: &Pubkey, accounts: &[AccountInfo]) -> Program
     reserve.liquidity.accumulated_protocol_fees_wads = reserve
         .liquidity
         .accumulated_protocol_fees_wads
-        .try_sub(Decimal::from(fee_reciever_claimable_amount))?;
+        .try_sub(Decimal::from(fee_receiver_claimable_amount))?;
+
+    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
 
     spl_token_transfer(TokenTransferParams {
         source: reserve_supply_liquidity_info.clone(),
         destination: reserve_liquidity_fee_receiver_info.clone(),
-        amount: fee_reciever_claimable_amount,
+        amount: fee_receiver_claimable_amount,
         authority: lending_market_authority_info.clone(),
         authority_signer_seeds,
         token_program: token_program_id.clone(),
