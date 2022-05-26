@@ -1070,26 +1070,28 @@ mod test {
                 ..Reserve::default()
             };
 
-            let current_borrow_rate = reserve.current_borrow_rate()?;
-            assert!(current_borrow_rate >= Rate::from_percent(min_borrow_rate));
-            assert!(current_borrow_rate <= Rate::from_percent(max_borrow_rate));
+            if !(optimal_borrow_rate >250 && optimal_borrow_rate == max_borrow_rate) {
+                let current_borrow_rate = reserve.current_borrow_rate()?;
+                assert!(current_borrow_rate >= Rate::from_percent(min_borrow_rate));
+                assert!(current_borrow_rate <= Rate::from_percent(max_borrow_rate));
 
-            let optimal_borrow_rate = Rate::from_percent(optimal_borrow_rate);
-            let current_rate = reserve.liquidity.utilization_rate()?;
-            match current_rate.cmp(&Rate::from_percent(optimal_utilization_rate)) {
-                Ordering::Less => {
-                    if min_borrow_rate == reserve.config.optimal_borrow_rate {
-                        assert_eq!(current_borrow_rate, optimal_borrow_rate);
-                    } else {
-                        assert!(current_borrow_rate < optimal_borrow_rate);
+                let optimal_borrow_rate = Rate::from_percent(optimal_borrow_rate);
+                let current_rate = reserve.liquidity.utilization_rate()?;
+                match current_rate.cmp(&Rate::from_percent(optimal_utilization_rate)) {
+                    Ordering::Less => {
+                        if min_borrow_rate == reserve.config.optimal_borrow_rate {
+                            assert_eq!(current_borrow_rate, optimal_borrow_rate);
+                        } else {
+                            assert!(current_borrow_rate < optimal_borrow_rate);
+                        }
                     }
-                }
-                Ordering::Equal => assert!(current_borrow_rate == optimal_borrow_rate),
-                Ordering::Greater => {
-                    if max_borrow_rate == reserve.config.optimal_borrow_rate {
-                        assert_eq!(current_borrow_rate, optimal_borrow_rate);
-                    } else {
-                        assert!(current_borrow_rate > optimal_borrow_rate);
+                    Ordering::Equal => assert!(current_borrow_rate == optimal_borrow_rate),
+                    Ordering::Greater => {
+                        if max_borrow_rate == reserve.config.optimal_borrow_rate {
+                            assert_eq!(current_borrow_rate, optimal_borrow_rate);
+                        } else {
+                            assert!(current_borrow_rate > optimal_borrow_rate);
+                        }
                     }
                 }
             }
