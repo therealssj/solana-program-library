@@ -192,8 +192,36 @@ async fn test_success() {
         .unwrap();
     let new_borrow_amount_wads = Decimal::from(BORROW_AMOUNT)
         .try_add(delta_borrowed_amount_wads)
+        .unwrap()
+        .try_add(Decimal::from(usdc_balance_after - usdc_balance_before))
         .unwrap();
 
+    assert_eq!(
+        usdc_reserve_before.liquidity.total_supply(),
+        usdc_reserve.liquidity.total_supply(),
+    );
+    assert_eq!(
+        sol_reserve_before.liquidity.total_supply(),
+        sol_reserve.liquidity.total_supply(),
+    );
+    assert_eq!(
+        Rate::from(usdc_reserve_before.collateral_exchange_rate().unwrap()),
+        Rate::from(usdc_reserve.collateral_exchange_rate().unwrap()),
+    );
+    assert_eq!(
+        Rate::from(sol_reserve_before.collateral_exchange_rate().unwrap()),
+        Rate::from(sol_reserve.collateral_exchange_rate().unwrap()),
+    );
+
+    // utilization increases because redeeming adds to borrows and takes from availible
+    assert!(
+        usdc_reserve_before.liquidity.utilization_rate().unwrap()
+            < usdc_reserve.liquidity.utilization_rate().unwrap(),
+    );
+    assert!(
+        sol_reserve_before.liquidity.utilization_rate().unwrap()
+            < sol_reserve.liquidity.utilization_rate().unwrap(),
+    );
     assert_eq!(
         sol_reserve.liquidity.cumulative_borrow_rate_wads,
         compound_rate.into()

@@ -28,7 +28,7 @@ use solana_program::{
 };
 use spl_token::solana_program::instruction::AccountMeta;
 use spl_token::state::{Account, Mint};
-use std::{convert::TryInto, result::Result};
+use std::{cmp::min, convert::TryInto, result::Result};
 use switchboard_program::{
     get_aggregator, get_aggregator_result, AggregatorState, RoundResult, SwitchboardAccountType,
 };
@@ -2256,15 +2256,25 @@ fn process_redeem_fees(program_id: &Pubkey, accounts: &[AccountInfo]) -> Program
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
-    let fee_receiver_claimable_amount = reserve
+    let mut fee_receiver_claimable_amount = reserve
         .liquidity
         .accumulated_protocol_fees_wads
         .try_floor_u64()?;
+
+    fee_receiver_claimable_amount = min(
+        fee_receiver_claimable_amount,
+        reserve.liquidity.available_amount,
+    );
 
     reserve.liquidity.accumulated_protocol_fees_wads = reserve
         .liquidity
         .accumulated_protocol_fees_wads
         .try_sub(Decimal::from(fee_receiver_claimable_amount))?;
+
+    // for accounting purposes we need to subtract from availible amount and add to borrowed amount
+    reserve
+        .liquidity
+        .borrow(Decimal::from(fee_receiver_claimable_amount))?;
 
     Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
 
