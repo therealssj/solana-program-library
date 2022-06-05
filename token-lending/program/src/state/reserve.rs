@@ -467,7 +467,10 @@ impl ReserveLiquidity {
         if total_supply == Decimal::zero() {
             return Ok(Rate::zero());
         }
-        self.borrowed_amount_wads.try_div(total_supply)?.try_into()
+        self.borrowed_amount_wads
+            .try_add(self.accumulated_protocol_fees_wads)?
+            .try_div(total_supply)?
+            .try_into()
     }
 
     /// Compound current borrow rate over elapsed slots
@@ -487,7 +490,9 @@ impl ReserveLiquidity {
 
         let net_new_debt = self
             .borrowed_amount_wads
+            .try_add(self.accumulated_protocol_fees_wads)?
             .try_mul(compounded_interest_rate)?
+            .try_sub(self.accumulated_protocol_fees_wads)?
             .try_sub(self.borrowed_amount_wads)?;
 
         let delta_accumulated_protocol_fees = net_new_debt.try_mul(take_rate)?;

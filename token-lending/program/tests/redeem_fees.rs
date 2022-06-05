@@ -214,13 +214,13 @@ async fn test_success() {
     );
 
     // utilization increases because redeeming adds to borrows and takes from availible
-    assert!(
-        usdc_reserve_before.liquidity.utilization_rate().unwrap()
-            < usdc_reserve.liquidity.utilization_rate().unwrap(),
+    assert_eq!(
+        usdc_reserve_before.liquidity.utilization_rate().unwrap(),
+        usdc_reserve.liquidity.utilization_rate().unwrap()
     );
-    assert!(
-        sol_reserve_before.liquidity.utilization_rate().unwrap()
-            < sol_reserve.liquidity.utilization_rate().unwrap(),
+    assert_eq!(
+        sol_reserve_before.liquidity.utilization_rate().unwrap(),
+        sol_reserve.liquidity.utilization_rate().unwrap()
     );
     assert_eq!(
         sol_reserve.liquidity.cumulative_borrow_rate_wads,
