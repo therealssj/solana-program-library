@@ -456,6 +456,12 @@ impl ReserveLiquidity {
             .checked_add(repay_amount)
             .ok_or(LendingError::MathOverflow)?;
         let safe_settle_amount = settle_amount.min(self.borrowed_amount_wads);
+        // if you are fulling repaying the reserve protocol fees must be claimed
+        if safe_settle_amount == self.borrowed_amount_wads
+            && self.accumulated_protocol_fees_wads.try_floor_u64()? > 0
+        {
+            return Err(LendingError::OverRepayWithPendingFees.into());
+        }
         self.borrowed_amount_wads = self.borrowed_amount_wads.try_sub(safe_settle_amount)?;
 
         Ok(())

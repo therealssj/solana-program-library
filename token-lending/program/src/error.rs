@@ -159,10 +159,14 @@ pub enum LendingError {
     /// Not enough liquidity after flash loan
     #[error("Not enough liquidity after flash loan")]
     NotEnoughLiquidityAfterFlashLoan,
+
     // 45
     /// Null oracle config
     #[error("Null oracle config")]
     NullOracleConfig,
+    /// Over repay when pending protocol fees
+    #[error("Over repay when pending protocol fees")]
+    OverRepayWithPendingFees,
 }
 
 impl From<LendingError> for ProgramError {
