@@ -187,14 +187,6 @@ async fn test_success() {
         .unwrap();
     let protocol_take_rate = Rate::from_percent(sol_test_reserve.config.protocol_take_rate);
     let delta_accumulated_protocol_fees = net_new_debt.try_mul(protocol_take_rate).unwrap();
-    let delta_borrowed_amount_wads = net_new_debt
-        .try_sub(delta_accumulated_protocol_fees)
-        .unwrap();
-    let new_borrow_amount_wads = Decimal::from(BORROW_AMOUNT)
-        .try_add(delta_borrowed_amount_wads)
-        .unwrap()
-        .try_add(Decimal::from(usdc_balance_after - usdc_balance_before))
-        .unwrap();
 
     assert_eq!(
         usdc_reserve_before.liquidity.total_supply(),
@@ -214,13 +206,13 @@ async fn test_success() {
     );
 
     // utilization increases because redeeming adds to borrows and takes from availible
-    assert!(
-        usdc_reserve_before.liquidity.utilization_rate().unwrap()
-            < usdc_reserve.liquidity.utilization_rate().unwrap(),
+    assert_eq!(
+        usdc_reserve_before.liquidity.utilization_rate().unwrap(),
+        usdc_reserve.liquidity.utilization_rate().unwrap(),
     );
-    assert!(
-        sol_reserve_before.liquidity.utilization_rate().unwrap()
-            < sol_reserve.liquidity.utilization_rate().unwrap(),
+    assert_eq!(
+        sol_reserve_before.liquidity.utilization_rate().unwrap(),
+        sol_reserve.liquidity.utilization_rate().unwrap(),
     );
     assert_eq!(
         sol_reserve.liquidity.cumulative_borrow_rate_wads,
@@ -230,9 +222,31 @@ async fn test_success() {
         sol_reserve.liquidity.cumulative_borrow_rate_wads,
         usdc_reserve.liquidity.cumulative_borrow_rate_wads
     );
+    assert_eq!(sol_reserve.liquidity.borrowed_amount_wads, compound_borrow);
+    assert_eq!(usdc_reserve.liquidity.borrowed_amount_wads, compound_borrow);
     assert_eq!(
-        sol_reserve.liquidity.borrowed_amount_wads,
-        new_borrow_amount_wads
+        Decimal::from(delta_accumulated_protocol_fees.try_floor_u64().unwrap()),
+        usdc_reserve_before
+            .liquidity
+            .accumulated_protocol_fees_wads
+            .try_sub(usdc_reserve.liquidity.accumulated_protocol_fees_wads)
+            .unwrap()
+    );
+    assert_eq!(
+        Decimal::from(delta_accumulated_protocol_fees.try_floor_u64().unwrap()),
+        sol_reserve_before
+            .liquidity
+            .accumulated_protocol_fees_wads
+            .try_sub(sol_reserve.liquidity.accumulated_protocol_fees_wads)
+            .unwrap()
+    );
+    assert_eq!(
+        usdc_reserve_before.liquidity.accumulated_protocol_fees_wads,
+        delta_accumulated_protocol_fees
+    );
+    assert_eq!(
+        sol_reserve_before.liquidity.accumulated_protocol_fees_wads,
+        delta_accumulated_protocol_fees
     );
     assert_eq!(
         usdc_reserve_before
