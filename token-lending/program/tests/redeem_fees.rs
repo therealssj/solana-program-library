@@ -237,32 +237,32 @@ async fn test_success() {
     assert_eq!(
         usdc_reserve_before
             .liquidity
-            .cumulative_protocol_fees_wads
+            .accumulated_protocol_fees_wads
             .try_floor_u64()
             .unwrap(),
         usdc_balance_after - usdc_balance_before
     );
     assert_eq!(
-        usdc_reserve.liquidity.cumulative_protocol_fees_wads,
+        usdc_reserve.liquidity.accumulated_protocol_fees_wads,
         usdc_reserve_before
             .liquidity
-            .cumulative_protocol_fees_wads
+            .accumulated_protocol_fees_wads
             .try_sub(Decimal::from(usdc_balance_after - usdc_balance_before))
             .unwrap()
     );
     assert_eq!(
         sol_reserve_before
             .liquidity
-            .cumulative_protocol_fees_wads
+            .accumulated_protocol_fees_wads
             .try_floor_u64()
             .unwrap(),
         sol_balance_after - sol_balance_before
     );
     assert_eq!(
-        sol_reserve.liquidity.cumulative_protocol_fees_wads,
+        sol_reserve.liquidity.accumulated_protocol_fees_wads,
         sol_reserve_before
             .liquidity
-            .cumulative_protocol_fees_wads
+            .accumulated_protocol_fees_wads
             .try_sub(Decimal::from(sol_balance_after - sol_balance_before))
             .unwrap()
     );

@@ -7,9 +7,9 @@ use crate::{
     math::{Decimal, Rate, TryAdd, TryDiv, TryMul, TrySub, WAD},
     pyth,
     state::{
-        CalculateBorrowResult, CalculateLiquidationResult, CalculateRepayResult,
-        InitLendingMarketParams, InitObligationParams, InitReserveParams, LendingMarket,
-        NewReserveCollateralParams, NewReserveLiquidityParams, Obligation, Reserve,
+        CalculateBorrowResult, CalculateLiquidationResult, CalculateRedeemFeesResult,
+        CalculateRepayResult, InitLendingMarketParams, InitObligationParams, InitReserveParams,
+        LendingMarket, NewReserveCollateralParams, NewReserveLiquidityParams, Obligation, Reserve,
         ReserveCollateral, ReserveConfig, ReserveLiquidity,
     },
 };
@@ -2210,6 +2210,7 @@ fn process_redeem_fees(program_id: &Pubkey, accounts: &[AccountInfo]) -> Program
     let lending_market_info = next_account_info(account_info_iter)?;
     let lending_market_authority_info = next_account_info(account_info_iter)?;
     let token_program_id = next_account_info(account_info_iter)?;
+    let clock = &Clock::get()?;
 
     let mut reserve = Reserve::unpack(&reserve_info.data.borrow())?;
     if reserve_info.owner != program_id {
@@ -2232,6 +2233,10 @@ fn process_redeem_fees(program_id: &Pubkey, accounts: &[AccountInfo]) -> Program
     if &reserve.lending_market != lending_market_info.key {
         msg!("Reserve lending market does not match the lending market provided");
         return Err(LendingError::InvalidAccountInput.into());
+    }
+    if reserve.last_update.is_stale(clock.slot)? {
+        msg!("reserve is stale and must be refreshed in the current slot");
+        return Err(LendingError::ReserveStale.into());
     }
 
     let lending_market = LendingMarket::unpack(&lending_market_info.data.borrow())?;
@@ -2256,17 +2261,28 @@ fn process_redeem_fees(program_id: &Pubkey, accounts: &[AccountInfo]) -> Program
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
+    let CalculateRedeemFeesResult {
+        settle_amount,
+        withdraw_amount,
+    } = reserve.calculate_redeem_fees()?;
+    if withdraw_amount == 0 {
+        return Err(LendingError::InsufficientProtocolFeesToRedeem.into());
+    }
+
+    reserve
+        .liquidity
+        .redeem_fees(settle_amount, withdraw_amount)?;
+    reserve.last_update.mark_stale();
+    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
+
     spl_token_transfer(TokenTransferParams {
         source: reserve_supply_liquidity_info.clone(),
         destination: reserve_liquidity_fee_receiver_info.clone(),
-        amount: reserve.liquidity.claimable_protocol_fees,
+        amount: withdraw_amount,
         authority: lending_market_authority_info.clone(),
         authority_signer_seeds,
         token_program: token_program_id.clone(),
     })?;
-
-    reserve.liquidity.claimable_protocol_fees = 0;
-    Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
 
     Ok(())
 }
