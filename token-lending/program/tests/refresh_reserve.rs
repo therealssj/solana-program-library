@@ -122,12 +122,6 @@ async fn test_success() {
         .unwrap();
     let protocol_take_rate = Rate::from_percent(usdc_reserve.config.protocol_take_rate);
     let delta_accumulated_protocol_fees = net_new_debt.try_mul(protocol_take_rate).unwrap();
-    let delta_borrowed_amount_wads = net_new_debt
-        .try_sub(delta_accumulated_protocol_fees)
-        .unwrap();
-    let new_borrow_amount_wads = Decimal::from(BORROW_AMOUNT)
-        .try_add(delta_borrowed_amount_wads)
-        .unwrap();
 
     assert_eq!(
         sol_reserve.liquidity.cumulative_borrow_rate_wads,
@@ -137,10 +131,7 @@ async fn test_success() {
         sol_reserve.liquidity.cumulative_borrow_rate_wads,
         usdc_reserve.liquidity.cumulative_borrow_rate_wads
     );
-    assert_eq!(
-        sol_reserve.liquidity.borrowed_amount_wads,
-        new_borrow_amount_wads
-    );
+    assert_eq!(sol_reserve.liquidity.borrowed_amount_wads, compound_borrow);
     assert_eq!(
         sol_reserve.liquidity.borrowed_amount_wads,
         usdc_reserve.liquidity.borrowed_amount_wads
@@ -152,5 +143,13 @@ async fn test_success() {
     assert_eq!(
         usdc_reserve.liquidity.market_price,
         usdc_test_reserve.market_price
+    );
+    assert_eq!(
+        delta_accumulated_protocol_fees,
+        usdc_reserve.liquidity.accumulated_protocol_fees_wads
+    );
+    assert_eq!(
+        delta_accumulated_protocol_fees,
+        sol_reserve.liquidity.accumulated_protocol_fees_wads
     );
 }

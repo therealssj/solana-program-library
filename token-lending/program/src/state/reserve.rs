@@ -330,24 +330,13 @@ impl Reserve {
     }
 
     /// Calculate protocol fee redemption accounting for availible liquidity and accumulated fees
-    pub fn calculate_redeem_fees(&self) -> Result<CalculateRedeemFeesResult, ProgramError> {
-        // idt i need to do this but i wasn't sure if the collected fees were collecting as "virtual ctokens"
-        // let exchange_rate = self.collateral_exchange_rate()?;
-        // let accumulated_protocol_fees_as_liquidity = exchange_rate.decimal_collateral_to_liquidity(self.liquidity.accumulated_protocol_fees_wads)?;
-        // let withdraw_amount = min(self.liquidity.available_amount, accumulated_protocol_fees_as_liquidity.try_floor_u64()?);
-        // let settle_amount = exchange_rate.decimal_liquidity_to_collateral(Decimal::from(withdraw_amount))?;
-        let withdraw_amount = min(
+    pub fn calculate_redeem_fees(&self) -> Result<u64, ProgramError> {
+        Ok(min(
             self.liquidity.available_amount,
             self.liquidity
                 .accumulated_protocol_fees_wads
                 .try_floor_u64()?,
-        );
-        let settle_amount = Decimal::from(withdraw_amount);
-
-        Ok(CalculateRedeemFeesResult {
-            settle_amount,
-            withdraw_amount,
-        })
+        ))
     }
 }
 
@@ -396,15 +385,6 @@ pub struct CalculateLiquidationResult {
     /// Amount that will be repaid as u64
     pub repay_amount: u64,
     /// Amount of collateral to withdraw in exchange for repay amount
-    pub withdraw_amount: u64,
-}
-
-/// Calculate redeem fees result
-#[derive(Debug)]
-pub struct CalculateRedeemFeesResult {
-    /// The Decimal amount of fees redeemed
-    pub settle_amount: Decimal,
-    /// Amount of liquidity to withdraw to redeem from the reserve
     pub withdraw_amount: u64,
 }
 
@@ -509,13 +489,14 @@ impl ReserveLiquidity {
     }
 
     /// Subtract settle amount from accumulated_protocol_fees_wads and withdraw_amount from available liquidity
-    pub fn redeem_fees(&mut self, settle_amount: Decimal, withdraw_amount: u64) -> ProgramResult {
+    pub fn redeem_fees(&mut self, withdraw_amount: u64) -> ProgramResult {
         self.available_amount = self
             .available_amount
             .checked_sub(withdraw_amount)
             .ok_or(LendingError::MathOverflow)?;
-        self.accumulated_protocol_fees_wads =
-            self.accumulated_protocol_fees_wads.try_sub(settle_amount)?;
+        self.accumulated_protocol_fees_wads = self
+            .accumulated_protocol_fees_wads
+            .try_sub(Decimal::from(withdraw_amount))?;
 
         Ok(())
     }

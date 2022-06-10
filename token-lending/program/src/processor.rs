@@ -7,9 +7,9 @@ use crate::{
     math::{Decimal, Rate, TryAdd, TryDiv, TryMul, TrySub, WAD},
     pyth,
     state::{
-        CalculateBorrowResult, CalculateLiquidationResult, CalculateRedeemFeesResult,
-        CalculateRepayResult, InitLendingMarketParams, InitObligationParams, InitReserveParams,
-        LendingMarket, NewReserveCollateralParams, NewReserveLiquidityParams, Obligation, Reserve,
+        CalculateBorrowResult, CalculateLiquidationResult, CalculateRepayResult,
+        InitLendingMarketParams, InitObligationParams, InitReserveParams, LendingMarket,
+        NewReserveCollateralParams, NewReserveLiquidityParams, Obligation, Reserve,
         ReserveCollateral, ReserveConfig, ReserveLiquidity,
     },
 };
@@ -2261,17 +2261,12 @@ fn process_redeem_fees(program_id: &Pubkey, accounts: &[AccountInfo]) -> Program
         return Err(LendingError::InvalidMarketAuthority.into());
     }
 
-    let CalculateRedeemFeesResult {
-        settle_amount,
-        withdraw_amount,
-    } = reserve.calculate_redeem_fees()?;
+    let withdraw_amount = reserve.calculate_redeem_fees()?;
     if withdraw_amount == 0 {
         return Err(LendingError::InsufficientProtocolFeesToRedeem.into());
     }
 
-    reserve
-        .liquidity
-        .redeem_fees(settle_amount, withdraw_amount)?;
+    reserve.liquidity.redeem_fees(withdraw_amount)?;
     reserve.last_update.mark_stale();
     Reserve::pack(reserve, &mut reserve_info.data.borrow_mut())?;
 
